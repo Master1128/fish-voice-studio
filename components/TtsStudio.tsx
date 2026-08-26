@@ -41,15 +41,18 @@ const DEFAULT_CONTROLS: TtsControls = {
 
 const LS_SETTINGS = "fvs.ttsSettings";
 
+import type { KeyAvailability } from "./Studio";
+
 interface Props {
   keys: AppKeys;
+  avail: KeyAvailability;
   onOpenSettings: () => void;
   toast: (msg: string, type?: "success" | "error" | "info") => void;
   injectVoice: { voice: VoiceItem; seq: number } | null;
   setLastAudio: (blob: Blob | null) => void;
 }
 
-export function TtsStudio({ keys, onOpenSettings, toast, injectVoice, setLastAudio }: Props) {
+export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, setLastAudio }: Props) {
   const [text, setText] = useState("");
   const [engine, setEngine] = useState<Engine>("gateway");
   const [model, setModel] = useState<FishModel>("s2.1-pro");
@@ -143,12 +146,12 @@ export function TtsStudio({ keys, onOpenSettings, toast, injectVoice, setLastAud
       toast("Escribe el texto que quieres convertir a voz", "error");
       return;
     }
-    if (engine === "gateway" && !keys.gw) {
+    if (engine === "gateway" && !avail.gw) {
       toast("Primero configura tu API key de Vercel AI Gateway", "error");
       onOpenSettings();
       return;
     }
-    if (engine === "fish" && !keys.fish) {
+    if (engine === "fish" && !avail.fish) {
       toast("El modo directo necesita una API key de Fish Audio", "error");
       onOpenSettings();
       return;
@@ -246,7 +249,7 @@ export function TtsStudio({ keys, onOpenSettings, toast, injectVoice, setLastAud
       setCanceling(false);
       setProgress(null);
     }
-  }, [text, engine, keys, dialogMode, voiceA, voiceB, chunks, model, freeSuffix, controls, toast, onOpenSettings, setLastAudio]);
+  }, [text, engine, keys, avail, dialogMode, voiceA, voiceB, chunks, model, freeSuffix, controls, toast, onOpenSettings, setLastAudio]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {

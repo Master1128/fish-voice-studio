@@ -14,14 +14,17 @@ interface Clip {
   transcript: string;
 }
 
+import type { KeyAvailability } from "./Studio";
+
 interface Props {
   keys: AppKeys;
+  avail: KeyAvailability;
   onOpenSettings: () => void;
   onUseVoice: (voice: VoiceItem) => void;
   toast: (msg: string, type?: "success" | "error" | "info") => void;
 }
 
-export function CloneStudio({ keys, onOpenSettings, onUseVoice, toast }: Props) {
+export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: Props) {
   const [clips, setClips] = useState<Clip[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -117,7 +120,7 @@ export function CloneStudio({ keys, onOpenSettings, onUseVoice, toast }: Props) 
   };
 
   const createVoice = async () => {
-    if (!keys.fish) {
+    if (!avail.fish) {
       toast("La clonación requiere una API key de Fish Audio (gratis)", "error");
       onOpenSettings();
       return;
@@ -289,7 +292,7 @@ export function CloneStudio({ keys, onOpenSettings, onUseVoice, toast }: Props) 
           <Btn variant="primary" size="lg" onClick={createVoice} disabled={busy || !clips.length || !title.trim()}>
             {busy ? <Spinner /> : "🧬"} Crear voz clonada
           </Btn>
-          {!keys.fish && (
+          {!avail.fish && (
             <button className="cursor-pointer text-xs text-cyan-400 underline" onClick={onOpenSettings} type="button">
               Configura tu key de Fish Audio (gratis)
             </button>

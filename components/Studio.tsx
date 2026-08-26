@@ -27,9 +27,15 @@ interface Toast {
   type: "success" | "error" | "info";
 }
 
+export interface KeyAvailability {
+  gw: boolean;
+  fish: boolean;
+}
+
 export function Studio() {
   const [tab, setTab] = useState<Tab>("studio");
   const [keys, setKeys] = useState<AppKeys>({ gw: "", fish: "" });
+  const [serverKeys, setServerKeys] = useState<KeyAvailability>({ gw: false, fish: false });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [injectVoice, setInjectVoice] = useState<{ voice: VoiceItem; seq: number } | null>(null);
@@ -41,9 +47,19 @@ export function Studio() {
     const loaded = loadKeys();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setKeys(loaded);
-     
+
     setPromoDays(daysUntilPromoEnd());
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then((d: KeyAvailability) => setServerKeys({ gw: !!d.gw, fish: !!d.fish }))
+      .catch(() => {});
   }, []);
+
+  /** Una función está disponible si hay key en el navegador o configurada por env en el servidor. */
+  const avail: KeyAvailability = {
+    gw: !!keys.gw || serverKeys.gw,
+    fish: !!keys.fish || serverKeys.fish,
+  };
 
   const toast = useCallback((msg: string, type: Toast["type"] = "info") => {
     const id = Date.now() + Math.random();
@@ -87,7 +103,7 @@ export function Studio() {
             )}
             <Btn onClick={openSettings} size="sm">
               🔑 API Keys{" "}
-              {!keys.gw && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-400" />}
+              {!avail.gw && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-400" />}
             </Btn>
           </div>
         </header>
@@ -110,7 +126,7 @@ export function Studio() {
           ))}
         </nav>
 
-        {!keys.gw && tab !== "account" && (
+        {!avail.gw && tab !== "account" && (
           <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-sm text-amber-300">
             <span>⚠ Configura tu API key de Vercel AI Gateway para empezar a generar audio gratis.</span>
             <Btn size="sm" onClick={openSettings}>
@@ -123,6 +139,7 @@ export function Studio() {
         {tab === "studio" && (
           <TtsStudio
             keys={keys}
+            avail={avail}
             onOpenSettings={openSettings}
             toast={toast}
             injectVoice={injectVoice}
@@ -131,12 +148,12 @@ export function Studio() {
         )}
         {tab === "voices" && <VoiceLibrary keys={keys} onUseVoice={useVoice} toast={toast} />}
         {tab === "clone" && (
-          <CloneStudio keys={keys} onOpenSettings={openSettings} onUseVoice={useVoice} toast={toast} />
+          <CloneStudio keys={keys} avail={avail} onOpenSettings={openSettings} onUseVoice={useVoice} toast={toast} />
         )}
         {tab === "stt" && (
-          <SttStudio keys={keys} onOpenSettings={openSettings} toast={toast} lastAudio={lastAudio} />
+          <SttStudio keys={keys} avail={avail} onOpenSettings={openSettings} toast={toast} lastAudio={lastAudio} />
         )}
-        {tab === "account" && <AccountPanel keys={keys} onOpenSettings={openSettings} toast={toast} />}
+        {tab === "account" && <AccountPanel keys={keys} avail={avail} onOpenSettings={openSettings} toast={toast} />}
       </div>
 
       {/* toasts */}

@@ -14,14 +14,17 @@ import {
 import { LANGUAGES } from "@/lib/constants";
 import { Badge, Btn, EmptyState, Field, Select, Spinner, Toggle } from "./ui";
 
+import type { KeyAvailability } from "./Studio";
+
 interface Props {
   keys: AppKeys;
+  avail: KeyAvailability;
   onOpenSettings: () => void;
   toast: (msg: string, type?: "success" | "error" | "info") => void;
   lastAudio: Blob | null;
 }
 
-export function SttStudio({ keys, onOpenSettings, toast, lastAudio }: Props) {
+export function SttStudio({ keys, avail, onOpenSettings, toast, lastAudio }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [language, setLanguage] = useState("");
@@ -73,7 +76,7 @@ export function SttStudio({ keys, onOpenSettings, toast, lastAudio }: Props) {
 
   const transcribeAudio = async () => {
     if (!file) return;
-    if (!keys.gw) {
+    if (!avail.gw) {
       toast("Configura tu API key de Vercel AI Gateway", "error");
       onOpenSettings();
       return;

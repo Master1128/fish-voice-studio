@@ -6,13 +6,16 @@ import { apiFetch } from "@/lib/client";
 import { MODELS, PRICING_STT_PER_HOUR, PRICING_TTS_PER_M_CHARS } from "@/lib/constants";
 import { Badge, Btn, Spinner } from "./ui";
 
+import type { KeyAvailability } from "./Studio";
+
 interface Props {
   keys: AppKeys;
+  avail: KeyAvailability;
   onOpenSettings: () => void;
   toast: (msg: string, type?: "success" | "error" | "info") => void;
 }
 
-export function AccountPanel({ keys, onOpenSettings, toast }: Props) {
+export function AccountPanel({ keys, avail, onOpenSettings, toast }: Props) {
   const [credits, setCredits] = useState<{ balance: string; totalUsed: string } | null>(null);
   const [loadingCredits, setLoadingCredits] = useState(false);
   const [fishStatus, setFishStatus] = useState<"unknown" | "ok" | "fail">("unknown");
@@ -33,7 +36,7 @@ export function AccountPanel({ keys, onOpenSettings, toast }: Props) {
   }, []);
 
   const refreshCredits = useCallback(async () => {
-    if (!keys.gw) {
+    if (!avail.gw) {
       toast("Configura primero tu API key del Gateway", "error");
       onOpenSettings();
       return;
@@ -47,19 +50,19 @@ export function AccountPanel({ keys, onOpenSettings, toast }: Props) {
     } finally {
       setLoadingCredits(false);
     }
-  }, [keys, toast, onOpenSettings]);
+  }, [keys, avail.gw, toast, onOpenSettings]);
 
   useEffect(() => {
-    if (keys.gw) {
+    if (avail.gw) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       refreshCredits();
     }
-    if (keys.fish) {
+    if (avail.fish) {
       apiFetch("/api/voices?self=true&page_size=1", keys)
         .then(() => setFishStatus("ok"))
         .catch(() => setFishStatus("fail"));
     }
-  }, [keys, refreshCredits]);
+  }, [keys, avail, refreshCredits]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -90,7 +93,13 @@ export function AccountPanel({ keys, onOpenSettings, toast }: Props) {
         <section className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-200">
             API key de Vercel AI Gateway
-            {keys.gw ? <Badge tone="green">configurada</Badge> : <Badge tone="amber">falta</Badge>}
+            {keys.gw ? (
+              <Badge tone="green">configurada</Badge>
+            ) : avail.gw ? (
+              <Badge tone="green">configurada en el servidor</Badge>
+            ) : (
+              <Badge tone="amber">falta</Badge>
+            )}
           </h3>
           <p className="text-xs leading-relaxed text-zinc-500">
             Necesaria para TTS y transcripción. Se guarda solo en tu navegador (localStorage) y se
@@ -131,7 +140,8 @@ export function AccountPanel({ keys, onOpenSettings, toast }: Props) {
             API key de Fish Audio
             {fishStatus === "ok" && <Badge tone="green">válida</Badge>}
             {fishStatus === "fail" && <Badge tone="red">inválida</Badge>}
-            {!keys.fish && <Badge>opcional</Badge>}
+            {!avail.fish && <Badge>opcional</Badge>}
+            {avail.fish && !keys.fish && <Badge tone="cyan">en el servidor</Badge>}
           </h3>
           <p className="text-xs leading-relaxed text-zinc-500">
             Solo necesaria para <strong>clonar voces</strong>, listar tus voces privadas y el modo

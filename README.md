@@ -145,8 +145,18 @@ FISH_AUDIO_API_KEY=fa-...    # Fish Audio (opcional)
 ### Vercel (recomendado)
 
 1. Haz fork del repositorio y en [vercel.com/new](https://vercel.com/new) importa tu fork.
-2. (Opcional) Añade `AI_GATEWAY_API_KEY` — y `FISH_AUDIO_API_KEY` si la quieres — como *Environment Variables* del proyecto para que funcione sin introducir keys en la interfaz.
+2. (Opcional) Añade `AI_GATEWAY_API_KEY` — y `FISH_AUDIO_API_KEY` si la quieres — como *Environment Variables* del proyecto.
 3. Despliega. No requiere ninguna otra configuración.
+
+#### Modo compartido (keys en el servidor)
+
+Si defines las variables de entorno, **la app funciona sin que nadie introduzca keys**: la interfaz detecta que el servidor está configurado (vía `/api/status`, que solo reporta un booleano y nunca expone las keys) y habilita todas las funciones. Es el modo ideal para compartir la URL con amigos.
+
+Ten en cuenta:
+
+- Quien tenga la URL usará **tus** créditos del Gateway. Durante la promo los modelos fish cuestan $0, así que no hay gasto real.
+- El sufijo `-free` (activado por defecto) hace que tras la promo las peticiones **falen en lugar de cobrar**. Si alguien lo desactiva después del 18-sep-2026, esas generaciones sí se cobrarían de tu saldo — si no quieres depender de eso, elimina la variable de entorno al terminar la promo o mantén un saldo bajo.
+- La key vive solo en el servidor: los visitantes jamás la ven en su navegador.
 
 Cualquier otro hosting Node (Railway, Render, un VPS…) también sirve: `npm run build && npm start` expone el servidor en el puerto 3000 (configurable con `PORT`).
 
