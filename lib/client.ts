@@ -89,39 +89,46 @@ export async function generateChunk(
 
 // ---------- división de texto largo ----------
 
-/** Divide texto largo en fragmentos que respetan oraciones y párrafos. */
+/**
+ * Divide texto largo en fragmentos que respetan oraciones y párrafos.
+ * Sin pérdidas (los decimales tipo "3.5" no rompen frases) y sin cortar
+ * palabras: una frase más larga que el máximo se corta por comas o espacios.
+ */
 export function splitLongText(text: string, maxLen = 450): string[] {
   const chunks: string[] = [];
   let current = "";
 
-  const pushSentence = (sentence: string) => {
-    if (current && (current + " " + sentence).length > maxLen) {
-      chunks.push(current.trim());
-      current = sentence;
-    } else {
-      current = current ? `${current} ${sentence}` : sentence;
+  const flush = () => {
+    const trimmed = current.trim();
+    if (trimmed) chunks.push(trimmed);
+    current = "";
+  };
+
+  const addPiece = (piece: string) => {
+    piece = piece.trim();
+    if (!piece) return;
+    if (current && (current + " " + piece).length > maxLen) flush();
+    while (piece.length > maxLen) {
+      const comma = piece.lastIndexOf(", ", maxLen);
+      const space = piece.lastIndexOf(" ", maxLen);
+      let cut: number;
+      if (comma > maxLen / 2) cut = comma + 1;
+      else if (space > maxLen / 2) cut = space;
+      else cut = maxLen; // palabra continua más larga que el segmento
+      const head = piece.slice(0, cut).trim();
+      if (head) chunks.push(head);
+      piece = piece.slice(cut).trim();
     }
-    // Una sola "oración" más larga que el máximo: se parte por comas o de forma dura
-    if (current.length > maxLen * 1.6) {
-      const mid = current.lastIndexOf(", ", maxLen);
-      const cut = mid > maxLen / 2 ? mid + 1 : maxLen;
-      chunks.push(current.slice(0, cut).trim());
-      current = current.slice(cut).trim();
-    }
+    current = current ? `${current} ${piece}` : piece;
   };
 
   for (const paragraph of text.split(/\n{2,}/)) {
     const trimmed = paragraph.trim();
     if (!trimmed) continue;
-    if (current && (current + "\n\n" + trimmed).length > maxLen) {
-      chunks.push(current.trim());
-      current = "";
-    }
-    const sentences = trimmed.match(/[^.!?…]+[.!?…]+(\s+|$)|[^.!?…]+$/g) || [trimmed];
-    for (const sentence of sentences) pushSentence(sentence.trim());
+    for (const sentence of trimmed.split(/(?<=[.!?…])\s+/)) addPiece(sentence);
   }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.filter(Boolean);
+  flush();
+  return chunks;
 }
 
 // ---------- fusión de audio ----------
