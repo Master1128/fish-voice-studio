@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  BibleCitationSettings,
+  BibleCitationStyle,
   Engine,
   FishModel,
   GenerationResult,
@@ -17,6 +19,7 @@ import {
   splitLongText,
 } from "@/lib/client";
 import { MARKERS, MODELS, extForFormat } from "@/lib/constants";
+import { normalizeBibleReferences } from "@/lib/bibleReferences";
 import { Badge, Btn, Collapsible, Field, Range, Select, Spinner, Toggle } from "./ui";
 import { VoiceAvatar } from "./VoiceCard";
 import { VoicePicker } from "./VoicePicker";
@@ -37,6 +40,11 @@ const DEFAULT_CONTROLS: TtsControls = {
   chunkLength: 200,
   conditionOnPreviousChunks: true,
   qualityGuard: false,
+};
+
+const DEFAULT_BIBLE_CITATIONS: BibleCitationSettings = {
+  enabled: true,
+  style: "compact",
 };
 
 const LS_SETTINGS = "fvs.ttsSettings";
@@ -61,6 +69,7 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
   const [voiceA, setVoiceA] = useState<VoiceItem | null>(null);
   const [voiceB, setVoiceB] = useState<VoiceItem | null>(null);
   const [controls, setControls] = useState<TtsControls>(DEFAULT_CONTROLS);
+  const [bibleCitations, setBibleCitations] = useState<BibleCitationSettings>(DEFAULT_BIBLE_CITATIONS);
   const [autoSplit, setAutoSplit] = useState(true);
   const [maxChunk, setMaxChunk] = useState(450);
   const [pickerOpen, setPickerOpen] = useState<null | "A" | "B">(null);
@@ -86,6 +95,15 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
         if (s.engine) setEngine(s.engine);
         if (typeof s.freeSuffix === "boolean") setFreeSuffix(s.freeSuffix);
         if (s.controls) setControls((c) => ({ ...c, ...s.controls }));
+        if (s.bibleCitations && typeof s.bibleCitations === "object") {
+          setBibleCitations({
+            enabled:
+              typeof s.bibleCitations.enabled === "boolean"
+                ? s.bibleCitations.enabled
+                : DEFAULT_BIBLE_CITATIONS.enabled,
+            style: s.bibleCitations.style === "narrated" ? "narrated" : "compact",
+          });
+        }
         if (typeof s.autoSplit === "boolean") setAutoSplit(s.autoSplit);
         if (s.maxChunk) setMaxChunk(s.maxChunk);
       }
@@ -98,12 +116,21 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
       try {
         localStorage.setItem(
           LS_SETTINGS,
-          JSON.stringify({ text, model, engine, freeSuffix, controls, autoSplit, maxChunk })
+          JSON.stringify({
+            text,
+            model,
+            engine,
+            freeSuffix,
+            controls,
+            bibleCitations,
+            autoSplit,
+            maxChunk,
+          })
         );
       } catch {}
     }, 600);
     return () => clearTimeout(timer);
-  }, [text, model, engine, freeSuffix, controls, autoSplit, maxChunk]);
+  }, [text, model, engine, freeSuffix, controls, bibleCitations, autoSplit, maxChunk]);
 
   // voz inyectada desde la pestaña Voces
   useEffect(() => {
@@ -133,13 +160,19 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
     });
   };
 
-  const chunks = useMemo(() => {
-    if (!text.trim()) return [] as string[];
-    if (dialogMode || !autoSplit || text.length <= maxChunk) return [text];
-    return splitLongText(text, maxChunk);
-  }, [text, autoSplit, maxChunk, dialogMode]);
+  const textForTts = useMemo(
+    () => normalizeBibleReferences(text, bibleCitations),
+    [text, bibleCitations]
+  );
 
-  const estCost = (text.length / 1_000_000) * 15;
+  const chunks = useMemo(() => {
+    if (!textForTts.trim()) return [] as string[];
+    if (dialogMode || !autoSplit || textForTts.length <= maxChunk) return [textForTts];
+    return splitLongText(textForTts, maxChunk);
+  }, [textForTts, autoSplit, maxChunk, dialogMode]);
+
+  const estCost = (textForTts.length / 1_000_000) * 15;
+  const bibleExpansion = textForTts.length - text.length;
 
   const generate = useCallback(async () => {
     if (!text.trim()) {
@@ -160,7 +193,7 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
     const useDialog = dialogMode && voiceA && voiceB;
     const payloadVoices = useDialog ? [voiceA!._id, voiceB!._id] : undefined;
     const payloadVoice = !useDialog ? voiceA?._id : undefined;
-    const textChunks = chunks.length ? chunks : [text];
+    const textChunks = chunks.length ? chunks : [textForTts];
 
     setBusy(true);
     cancelRef.current = false;
@@ -249,7 +282,7 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
       setCanceling(false);
       setProgress(null);
     }
-  }, [text, engine, keys, avail, dialogMode, voiceA, voiceB, chunks, model, freeSuffix, controls, toast, onOpenSettings, setLastAudio]);
+  }, [text, textForTts, engine, keys, avail, dialogMode, voiceA, voiceB, chunks, model, freeSuffix, controls, toast, onOpenSettings, setLastAudio]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -349,8 +382,11 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
           {/* barra de estado + generar */}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-3">
             <div className="text-[11px] text-zinc-500">
-              {text.length.toLocaleString()} caracteres ·{" "}
-              {chunks.length > 1 ? `${chunks.length} segmentos` : "1 segmento"} ·{" "}
+              {text.length.toLocaleString()} caracteres originales
+              {bibleCitations.enabled && bibleExpansion !== 0
+                ? ` · ${textForTts.length.toLocaleString()} enviados al TTS`
+                : ""}{" "}
+              · {chunks.length > 1 ? `${chunks.length} segmentos` : "1 segmento"} ·{" "}
               {estCost > 0 && (
                 <span className="text-emerald-400/90">
                   ~${estCost.toFixed(4)} (gratis durante la promo)
@@ -675,6 +711,47 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
                   label="Quality guard"
                   hint="Verifica la calidad del audio generado (puede tardar más)."
                 />
+              </>
+            )}
+          </Collapsible>
+
+          <Collapsible title="Pronunciación de citas bíblicas" defaultOpen>
+            <Toggle
+              checked={bibleCitations.enabled}
+              onChange={(enabled) => setBibleCitations((current) => ({ ...current, enabled }))}
+              label="Normalizar citas bíblicas"
+              hint="Detecta libros y referencias capítulo:versículo; no modifica el texto original."
+            />
+            {bibleCitations.enabled && (
+              <>
+                <Field label="Estilo de lectura">
+                  <Select
+                    value={bibleCitations.style}
+                    onChange={(e) =>
+                      setBibleCitations((current) => ({
+                        ...current,
+                        style: e.target.value as BibleCitationStyle,
+                      }))
+                    }
+                    options={[
+                      { value: "compact", label: "Compacto — Génesis, uno, uno" },
+                      {
+                        value: "narrated",
+                        label: "Narrado — Génesis, capítulo uno, versículo uno",
+                      },
+                    ]}
+                  />
+                </Field>
+                <div className="rounded-lg border border-cyan-900/50 bg-cyan-950/20 px-3 py-2 text-[11px] leading-relaxed text-zinc-400">
+                  <span className="text-zinc-500">Ejemplo:</span>{" "}
+                  <span className="text-cyan-300">
+                    {normalizeBibleReferences("Juan 3:16-18", bibleCitations)}
+                  </span>
+                </div>
+                <p className="text-[11px] leading-snug text-zinc-500">
+                  Solo cambia la copia enviada al sintetizador. El editor, el historial y el texto
+                  copiado conservan referencias como “Juan 3:16”.
+                </p>
               </>
             )}
           </Collapsible>

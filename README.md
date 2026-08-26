@@ -49,6 +49,7 @@
 - **Miles de voces** de la librería pública de Fish Audio: búsqueda, filtro por idioma/etiqueta, orden por popularidad, **preview en un clic**, favoritos y voces por id manual.
 - **Diálogo de 2 voces** (S2/S2.1): asigna Voz A y Voz B y marca los turnos con `<|speaker:0|>` / `<|speaker:1|>`.
 - **Marcadores de prosodia/emoción** insertables en el cursor: `[whispers]`, `[excited]`… (S2) o `(laughing)`, `(angry)`… (S1).
+- **Pronunciación automática de citas bíblicas**: reconoce los 73 libros, nombres completos y abreviaturas (`Gn. 1:1`, `1 Jn 4:8`, `Heb. 11:3,6-8`) y ofrece estilo compacto (“Génesis, uno, uno”) o narrado (“Génesis, capítulo uno, versículo uno”). Solo transforma la copia enviada al TTS; el texto original se conserva intacto.
 - **Controles de audio completos** (todo lo que expone la API): formato (MP3/WAV/Opus/PCM), bitrate, frecuencia de muestreo, latencia, **velocidad**, **volumen en dB**, normalización de sonoridad, temperatura y top-P (creatividad), chunk length, condicionado entre segmentos y *quality guard*.
 - **Dos motores**: *Vercel Gateway* (gratis durante la promo) o *Fish directo* con tu propia key (necesario para voces privadas; usa `prosody_speed`/`prosody_volume` nativos).
 - **Historial de generaciones** con reproductor, velocidad de reproducción, descarga por segmento o unido, avisos del modelo y coste estimado ($0 durante la promo).

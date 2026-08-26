@@ -1,6 +1,12 @@
 export type FishModel = "s2.1-pro" | "s2-pro" | "s1";
 export type OutputFormat = "mp3" | "wav" | "opus" | "pcm";
 export type Engine = "gateway" | "fish";
+export type BibleCitationStyle = "compact" | "narrated";
+
+export interface BibleCitationSettings {
+  enabled: boolean;
+  style: BibleCitationStyle;
+}
 
 export interface VoiceSample {
   title: string;
