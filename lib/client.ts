@@ -1,6 +1,16 @@
 "use client";
 
-import type { OutputFormat, TtsRequestPayload, TtsResponse, VoiceItem } from "./types";
+import type {
+  OutputFormat,
+  PronunciationDictionarySettings,
+  TtsRequestPayload,
+  TtsResponse,
+  VoiceItem,
+} from "./types";
+import {
+  createDefaultPronunciationDictionary,
+  validatePronunciationDictionary,
+} from "./pronunciationDictionary";
 import { MIME_BY_EXT, mimeForFormat } from "./constants";
 
 export interface AppKeys {
@@ -13,6 +23,7 @@ export interface AppKeys {
 const LS_KEYS = "fvs.keys";
 const LS_FAVS = "fvs.favorites";
 const LS_MY_VOICES = "fvs.myVoices";
+const LS_PRONUNCIATION_DICTIONARY = "fvs.pronunciationDictionary.v1";
 
 export function loadKeys(): AppKeys {
   if (typeof window === "undefined") return { gw: "", fish: "" };
@@ -51,6 +62,22 @@ export function loadMyVoices(): VoiceItem[] {
 
 export function saveMyVoices(items: VoiceItem[]) {
   localStorage.setItem(LS_MY_VOICES, JSON.stringify(items.slice(0, 200)));
+}
+
+export function loadPronunciationDictionary(): PronunciationDictionarySettings {
+  if (typeof window === "undefined") return createDefaultPronunciationDictionary();
+  try {
+    const raw = localStorage.getItem(LS_PRONUNCIATION_DICTIONARY);
+    if (!raw) return createDefaultPronunciationDictionary();
+    return validatePronunciationDictionary(JSON.parse(raw)).settings;
+  } catch {
+    return createDefaultPronunciationDictionary();
+  }
+}
+
+export function savePronunciationDictionary(settings: PronunciationDictionarySettings) {
+  const validated = validatePronunciationDictionary(settings).settings;
+  localStorage.setItem(LS_PRONUNCIATION_DICTIONARY, JSON.stringify(validated));
 }
 
 // ---------- API ----------

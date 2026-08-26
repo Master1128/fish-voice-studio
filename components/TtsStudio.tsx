@@ -8,6 +8,7 @@ import type {
   FishModel,
   GenerationResult,
   OutputFormat,
+  PronunciationDictionarySettings,
   TtsControls,
   VoiceItem,
 } from "@/lib/types";
@@ -15,14 +16,19 @@ import type { AppKeys } from "@/lib/client";
 import {
   formatBytes,
   generateChunk,
+  loadPronunciationDictionary,
   mergeAudioBlobs,
+  savePronunciationDictionary,
   splitLongText,
 } from "@/lib/client";
 import { MARKERS, MODELS, extForFormat } from "@/lib/constants";
+import { prepareTextForTts } from "@/lib/ttsText";
 import { normalizeBibleReferences } from "@/lib/bibleReferences";
+import { createDefaultPronunciationDictionary } from "@/lib/pronunciationDictionary";
 import { Badge, Btn, Collapsible, Field, Range, Select, Spinner, Toggle } from "./ui";
 import { VoiceAvatar } from "./VoiceCard";
 import { VoicePicker } from "./VoicePicker";
+import { PronunciationDictionaryEditor } from "./PronunciationDictionaryEditor";
 
 const DEFAULT_CONTROLS: TtsControls = {
   outputFormat: "mp3",
@@ -70,6 +76,9 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
   const [voiceB, setVoiceB] = useState<VoiceItem | null>(null);
   const [controls, setControls] = useState<TtsControls>(DEFAULT_CONTROLS);
   const [bibleCitations, setBibleCitations] = useState<BibleCitationSettings>(DEFAULT_BIBLE_CITATIONS);
+  const [pronunciationDictionary, setPronunciationDictionary] =
+    useState<PronunciationDictionarySettings>(createDefaultPronunciationDictionary);
+  const [pronunciationDictionaryLoaded, setPronunciationDictionaryLoaded] = useState(false);
   const [autoSplit, setAutoSplit] = useState(true);
   const [maxChunk, setMaxChunk] = useState(450);
   const [pickerOpen, setPickerOpen] = useState<null | "A" | "B">(null);
@@ -88,6 +97,7 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_SETTINGS);
+      setPronunciationDictionary(loadPronunciationDictionary());
       if (raw) {
         const s = JSON.parse(raw);
         if (s.text) setText(s.text);
@@ -108,8 +118,18 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
         if (s.maxChunk) setMaxChunk(s.maxChunk);
       }
     } catch {}
-     
+    setPronunciationDictionaryLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (!pronunciationDictionaryLoaded) return;
+    const timer = setTimeout(() => {
+      try {
+        savePronunciationDictionary(pronunciationDictionary);
+      } catch {}
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [pronunciationDictionary, pronunciationDictionaryLoaded]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -161,8 +181,8 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
   };
 
   const textForTts = useMemo(
-    () => normalizeBibleReferences(text, bibleCitations),
-    [text, bibleCitations]
+    () => prepareTextForTts(text, bibleCitations, pronunciationDictionary),
+    [text, bibleCitations, pronunciationDictionary]
   );
 
   const chunks = useMemo(() => {
@@ -172,7 +192,7 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
   }, [textForTts, autoSplit, maxChunk, dialogMode]);
 
   const estCost = (textForTts.length / 1_000_000) * 15;
-  const bibleExpansion = textForTts.length - text.length;
+  const textWasTransformed = textForTts !== text;
 
   const generate = useCallback(async () => {
     if (!text.trim()) {
@@ -383,7 +403,7 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-3">
             <div className="text-[11px] text-zinc-500">
               {text.length.toLocaleString()} caracteres originales
-              {bibleCitations.enabled && bibleExpansion !== 0
+              {textWasTransformed
                 ? ` · ${textForTts.length.toLocaleString()} enviados al TTS`
                 : ""}{" "}
               · {chunks.length > 1 ? `${chunks.length} segmentos` : "1 segmento"} ·{" "}
@@ -755,6 +775,12 @@ export function TtsStudio({ keys, avail, onOpenSettings, toast, injectVoice, set
               </>
             )}
           </Collapsible>
+
+          <PronunciationDictionaryEditor
+            settings={pronunciationDictionary}
+            onChange={setPronunciationDictionary}
+            toast={toast}
+          />
 
           <Collapsible title="Texto largo">
             <Toggle

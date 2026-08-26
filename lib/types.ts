@@ -8,6 +8,19 @@ export interface BibleCitationSettings {
   style: BibleCitationStyle;
 }
 
+export interface PronunciationRule {
+  id: string;
+  source: string;
+  replacement: string;
+  enabled: boolean;
+}
+
+export interface PronunciationDictionarySettings {
+  version: 1;
+  enabled: boolean;
+  rules: PronunciationRule[];
+}
+
 export interface VoiceSample {
   title: string;
   text: string;
