@@ -178,6 +178,7 @@ Las claves llegan al servidor por cabeceras internas (`x-gw-key` / `x-fish-key`)
 |---|---|
 | «Falta la API key de Vercel AI Gateway» | Configúrala en el botón *API Keys* o en `.env.local`. |
 | Error 401 del Gateway | La key es inválida o caducó; crea otra en el dashboard de Vercel. |
+| «Free tier users do not have access to this model» o «rate-limited» | Vercel exige **créditos comprados** (no los de prueba) para usar los modelos de voz, aunque durante la promo su precio sea $0. Soluciones: ① recargar créditos en [vercel.com → AI → Top-up](https://vercel.com/dashboard/ai) (los fish no consumen saldo mientras dure la promo), o ② usar el motor **«Fish directo»** de la app con una key gratuita de [fish.audio](https://fish.audio), que no pasa por Vercel. |
 | El MP3 unido no se reproduce en algún reproductor | La concatenación de MP3 es por frames; genera en **WAV** para una unión 100 % fiable. |
 | No aparecen más de 1000 voces | Límite de la API pública por búsqueda; afina el término o filtra por idioma. |
 | Mi voz clonada falla con el Gateway | Las voces **privadas** solo funcionan en modo *Fish directo*; usa visibilidad *no listada* al clonar. |
