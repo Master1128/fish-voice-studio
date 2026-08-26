@@ -53,12 +53,16 @@ export async function POST(req: Request) {
       if (controls.speed != null && controls.speed !== 1) payload.prosody_speed = controls.speed;
       if (controls.volume != null && controls.volume !== 0) payload.prosody_volume = `${controls.volume}dB`;
 
+      // En la plataforma de Fish, el modelo gratuito es "s2.1-pro-free";
+      // s1 y s2-pro no tienen variante -free (consumen los créditos mensuales).
+      const fishModel = body.freeSuffix && body.model === "s2.1-pro" ? "s2.1-pro-free" : body.model;
+
       const res = await fetch("https://api.fish.audio/v1/tts", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${fish}`,
           "Content-Type": "application/json",
-          model: body.model,
+          model: fishModel,
         },
         body: JSON.stringify(payload),
       });
