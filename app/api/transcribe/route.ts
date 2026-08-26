@@ -60,6 +60,7 @@ export async function POST(req: Request) {
     return Response.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido en la transcripción";
+    console.error(`[/api/transcribe] Falló la transcripción: ${message}`);
     return jsonError(message, 502);
   }
 }

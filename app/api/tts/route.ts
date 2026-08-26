@@ -68,10 +68,10 @@ export async function POST(req: Request) {
       // Modo Vercel AI Gateway (gratis durante la promo)
       const gateway = createGateway({ apiKey: gw });
       const fishOpts: Record<string, unknown> = {};
+      // En modo voz única usamos solo `voice` (la opción estándar);
+      // referenceId en array solo para diálogo multi-voz.
       if (multiVoice) {
         fishOpts.referenceId = body.voices;
-      } else if (body.voice) {
-        fishOpts.referenceId = body.voice;
       }
       if (outputFormat === "mp3") fishOpts.mp3Bitrate = controls.mp3Bitrate ?? 128;
       if (outputFormat === "opus") fishOpts.opusBitrate = controls.opusBitrate ?? 48000;
@@ -114,6 +114,11 @@ export async function POST(req: Request) {
     return Response.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido en la generación";
+    const upstream =
+      err && typeof err === "object" && "statusCode" in err
+        ? ` (HTTP ${(err as { statusCode?: number }).statusCode} del Gateway)`
+        : "";
+    console.error(`[/api/tts] Falló la generación${upstream}: ${message}`);
     return jsonError(message, 502);
   }
 }
