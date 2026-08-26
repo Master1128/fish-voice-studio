@@ -23,6 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // Las extensiones del navegador (traductores, etc.) inyectan atributos en <html>
+      // antes de hidratar React; se silencia solo este elemento para evitar falsos avisos.
+      suppressHydrationWarning
     >
       <body className="min-h-full bg-zinc-950 font-sans text-zinc-100">{children}</body>
     </html>
