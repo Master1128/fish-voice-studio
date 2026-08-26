@@ -13,14 +13,16 @@ import {
 import { LANGUAGES } from "@/lib/constants";
 import { Badge, Btn, EmptyState, Input, Select, Spinner } from "./ui";
 import { VoiceCard } from "./VoiceCard";
+import type { KeyAvailability } from "./Studio";
 
 interface Props {
   keys: AppKeys;
+  avail: KeyAvailability;
   onUseVoice: (voice: VoiceItem) => void;
   toast: (msg: string, type?: "success" | "error" | "info") => void;
 }
 
-export function VoiceLibrary({ keys, onUseVoice, toast }: Props) {
+export function VoiceLibrary({ keys, avail, onUseVoice, toast }: Props) {
   const [query, setQuery] = useState("");
   const [language, setLanguage] = useState("");
   const [sortBy, setSortBy] = useState("task_count");
@@ -74,10 +76,10 @@ export function VoiceLibrary({ keys, onUseVoice, toast }: Props) {
     };
   }, [fetchVoices]);
 
-  // voces propias de la cuenta de Fish (clonadas)
+  // voces propias de la cuenta de Fish (clonadas), también si la key está en Vercel env
   useEffect(() => {
-    if (!keys.fish) return;
-    apiFetch<VoiceListResponse>("/api/voices?self=true&page_size=50", keys)
+    if (!avail.fish) return;
+    apiFetch<VoiceListResponse>("/api/voices?self=true&page_size=50&sort_by=created_at", keys)
       .then((data) => {
         const mine = data.items || [];
         if (mine.length) {
@@ -86,7 +88,7 @@ export function VoiceLibrary({ keys, onUseVoice, toast }: Props) {
         }
       })
       .catch(() => {});
-  }, [keys.fish, keys]);
+  }, [avail.fish, keys]);
 
   const toggleFavorite = (voice: VoiceItem) => {
     setFavorites((prev) => {

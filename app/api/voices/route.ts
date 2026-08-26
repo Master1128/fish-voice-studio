@@ -32,7 +32,10 @@ export async function GET(req: Request) {
   if (fish) headers.Authorization = `Bearer ${fish}`;
 
   try {
-    const res = await fetch(`https://api.fish.audio/model?${params.toString()}`, { headers });
+    const res = await fetch(`https://api.fish.audio/model?${params.toString()}`, {
+      headers,
+      cache: "no-store",
+    });
     const data = await res.json();
     if (!res.ok) {
       return Response.json(

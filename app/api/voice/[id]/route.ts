@@ -9,8 +9,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!id) return jsonError("Falta el id");
 
   try {
-    const res = await fetch(`https://api.fish.audio/model/${id}`, {
+    const res = await fetch(`https://api.fish.audio/model/${id}?_=${Date.now()}`, {
       headers: fish ? { Authorization: `Bearer ${fish}` } : {},
+      cache: "no-store",
     });
     const data = await res.json();
     if (!res.ok) {

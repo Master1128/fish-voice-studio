@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { VoiceItem } from "@/lib/types";
+import type { VoiceItem, VoiceListResponse } from "@/lib/types";
 import type { AppKeys } from "@/lib/client";
 import { apiFetch, formatBytes, loadMyVoices, prepareVoiceClips, saveMyVoices } from "@/lib/client";
 import { Badge, Btn, Field, Input, Select, Spinner, TextArea } from "./ui";
@@ -33,6 +33,7 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<VoiceItem | null>(null);
   const [polling, setPolling] = useState(false);
+  const [pollNote, setPollNote] = useState("");
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [converting, setConverting] = useState(false);
@@ -40,6 +41,7 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const voicePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<HTMLDivElement>(null);
 
   /** Convierte los clips a WAV mono 16 kHz (recortados) antes de añadirlos,
@@ -116,6 +118,7 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (voicePollTimerRef.current) clearTimeout(voicePollTimerRef.current);
       recorderRef.current?.stream.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -180,10 +183,15 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
     setCreated(null);
     try {
       const voice = await apiFetch<VoiceItem>("/api/voices/clone", keys, { method: "POST", body: fd });
-      setCreated(voice);
-      toast(`Voz creada (${voice.state || "created"}): ${voice._id}`, "success");
-      if (voice.state === "trained") finish(voice);
-      else pollState(voice._id);
+      const id = voice._id || (voice as VoiceItem & { id?: string }).id;
+      if (!id) throw new Error("Fish Audio creó la voz pero no devolvió su id");
+      const normalized: VoiceItem = { ...voice, _id: id, state: voice.state || "created" };
+      setCreated(normalized);
+      // Guardarla desde el primer instante: si se recarga la página, el id no se pierde.
+      setMyVoicesAndPersist(normalized);
+      toast(`Voz creada (${normalized.state}): ${id}`, "success");
+      if (normalized.state === "trained") finish(normalized);
+      else void pollState(id);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Error creando la voz", "error");
     } finally {
@@ -201,31 +209,72 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
     saveMyVoices(next);
   };
 
-  const pollState = (id: string) => {
+  const fetchVoiceState = async (id: string): Promise<VoiceItem> => {
+    try {
+      return await apiFetch<VoiceItem>(`/api/voice/${id}?t=${Date.now()}`, keys);
+    } catch (directErr) {
+      // Fallback: algunas voces recién creadas aparecen antes en el listado de la cuenta.
+      const list = await apiFetch<VoiceListResponse>(
+        `/api/voices?self=true&page_size=100&sort_by=created_at&t=${Date.now()}`,
+        keys
+      );
+      const found = list.items?.find((voice) => voice._id === id);
+      if (found) return found;
+      throw directErr;
+    }
+  };
+
+  const pollState = async (id: string, manual = false) => {
+    if (voicePollTimerRef.current) clearTimeout(voicePollTimerRef.current);
     setPolling(true);
-    let tries = 0;
-    const timer = setInterval(async () => {
-      tries++;
+    setPollNote(manual ? "Consultando Fish Audio…" : "Entrenando en Fish Audio…");
+    const startedAt = Date.now();
+    let attempts = 0;
+
+    const check = async (): Promise<void> => {
+      attempts += 1;
       try {
-        const voice = await apiFetch<VoiceItem>(`/api/voice/${id}`, keys);
-        setCreated(voice);
-        if (voice.state === "trained") {
-          clearInterval(timer);
+        const voice = await fetchVoiceState(id);
+        const normalized: VoiceItem = {
+          ...voice,
+          _id: voice._id || id,
+          state: voice.state || "created",
+        };
+        setCreated(normalized);
+        setMyVoicesAndPersist(normalized);
+
+        if (normalized.state === "trained") {
           setPolling(false);
-          finish(voice);
-          toast(`¡Voz «${voice.title}» entrenada y lista!`, "success");
-        } else if (voice.state === "failed" || tries > 40) {
-          clearInterval(timer);
-          setPolling(false);
-          if (voice.state === "failed") toast("El entrenamiento falló", "error");
+          setPollNote("");
+          finish(normalized);
+          toast(`¡Voz «${normalized.title}» entrenada y lista!`, "success");
+          return;
         }
-      } catch {
-        if (tries > 40) {
-          clearInterval(timer);
+        if (normalized.state === "failed") {
           setPolling(false);
+          setPollNote("Fish Audio marcó el entrenamiento como fallido.");
+          toast("El entrenamiento de la voz falló", "error");
+          return;
         }
+      } catch (err) {
+        setPollNote(
+          `Todavía no se pudo consultar el estado (${err instanceof Error ? err.message : "error temporal"}).`
+        );
       }
-    }, 3000);
+
+      const elapsed = Date.now() - startedAt;
+      if (manual || elapsed >= 10 * 60_000) {
+        setPolling(false);
+        setPollNote(
+          "La voz está guardada, pero Fish aún no confirmó el entrenamiento. Puedes comprobarla otra vez o verla en Mis voces."
+        );
+        return;
+      }
+      setPollNote(`Estado pendiente · intento ${attempts}. Fish puede tardar varios minutos.`);
+      voicePollTimerRef.current = setTimeout(() => void check(), 5000);
+    };
+
+    await check();
   };
 
   return (
@@ -363,9 +412,11 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
             {polling && <Spinner />}
           </div>
           <p className="font-mono text-xs text-zinc-400">{created._id}</p>
-          {polling && <p className="text-xs text-zinc-500">Comprobando el entrenamiento cada 3 s…</p>}
-          {created.state === "trained" && (
-            <div className="flex gap-2">
+          {(polling || pollNote) && (
+            <p className="text-xs leading-relaxed text-zinc-500">{pollNote || "Consultando estado…"}</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {created.state === "trained" && (
               <Btn
                 variant="primary"
                 onClick={() => {
@@ -375,16 +426,19 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
               >
                 Usar en el estudio
               </Btn>
-              <Btn
-                onClick={() => {
-                  navigator.clipboard.writeText(created._id);
-                  toast("Id copiado", "success");
-                }}
-              >
-                Copiar id
-              </Btn>
-            </div>
-          )}
+            )}
+            {created.state !== "trained" && !polling && created.state !== "failed" && (
+              <Btn onClick={() => void pollState(created._id, true)}>Comprobar estado ahora</Btn>
+            )}
+            <Btn
+              onClick={() => {
+                navigator.clipboard.writeText(created._id);
+                toast("Id copiado", "success");
+              }}
+            >
+              Copiar id
+            </Btn>
+          </div>
         </section>
       )}
 

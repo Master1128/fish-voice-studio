@@ -146,7 +146,9 @@ export function Studio() {
             setLastAudio={setLastAudio}
           />
         )}
-        {tab === "voices" && <VoiceLibrary keys={keys} onUseVoice={useVoice} toast={toast} />}
+        {tab === "voices" && (
+          <VoiceLibrary keys={keys} avail={avail} onUseVoice={useVoice} toast={toast} />
+        )}
         {tab === "clone" && (
           <CloneStudio keys={keys} avail={avail} onOpenSettings={openSettings} onUseVoice={useVoice} toast={toast} />
         )}
