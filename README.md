@@ -192,6 +192,7 @@ Las claves llegan al servidor por cabeceras internas (`x-gw-key` / `x-fish-key`)
 | El MP3 unido no se reproduce en algún reproductor | La concatenación de MP3 es por frames; genera en **WAV** para una unión 100 % fiable. |
 | No aparecen más de 1000 voces | Límite de la API pública por búsqueda; afina el término o filtra por idioma. |
 | Mi voz clonada falla con el Gateway | Las voces **privadas** solo funcionan en modo *Fish directo*; usa visibilidad *no listada* al clonar. |
+| `413 Request Entity Too Large` al clonar o transcribir | Vercel limita cada petición a ~4,5 MB. La app ya convierte los audios en el navegador a WAV mono 16 kHz: la clonación conserva hasta 60 s por clip y 2 min en total (≤3,84 MB), y la transcripción trocea audios largos en partes de 75 s. Actualiza al último commit y vuelve a subir el archivo. |
 | La promo acaba y no quiero cobros | Deja activado el toggle **Sufijo -free**: los modelos dejarán de servir en vez de facturar. |
 
 ## 🤝 Contribuir

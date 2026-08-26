@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceItem } from "@/lib/types";
 import type { AppKeys } from "@/lib/client";
-import { apiFetch, audioBlobToWav, formatBytes, loadMyVoices, saveMyVoices } from "@/lib/client";
+import { apiFetch, formatBytes, loadMyVoices, prepareVoiceClips, saveMyVoices } from "@/lib/client";
 import { Badge, Btn, Field, Input, Select, Spinner, TextArea } from "./ui";
 
 interface Clip {
@@ -12,6 +12,7 @@ interface Clip {
   file: File;
   url: string;
   transcript: string;
+  duration: number; // segundos tras conversión
 }
 
 import type { KeyAvailability } from "./Studio";
@@ -34,22 +35,59 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
   const [polling, setPolling] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
+  const [converting, setConverting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dragRef = useRef<HTMLDivElement>(null);
 
-  const addFiles = (files: File[]) => {
-    const newClips = files.map((file) => ({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      name: file.name,
-      file,
-      url: URL.createObjectURL(file),
-      transcript: "",
-    }));
-    if (newClips.length) setClips((prev) => [...prev, ...newClips]);
-  };
+  /** Convierte los clips a WAV mono 16 kHz (recortados) antes de añadirlos,
+   *  para no superar el límite de 4.5 MB de subida de Vercel. */
+  const addFiles = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    const remainingSlots = Math.max(0, 5 - clips.length);
+    const accepted = files.slice(0, remainingSlots);
+    if (!accepted.length) {
+      toast("Ya tienes el máximo de 5 clips", "info");
+      return;
+    }
+    const usedSeconds = clips.reduce((sum, clip) => sum + clip.duration, 0);
+    const remainingSeconds = Math.max(0, 120 - usedSeconds);
+    if (remainingSeconds < 1) {
+      toast("Ya alcanzaste el máximo de 2 minutos de referencia", "info");
+      return;
+    }
+    setConverting(true);
+    try {
+      const prepared = await prepareVoiceClips(accepted, remainingSeconds);
+      const newClips: Clip[] = prepared.map((p, i) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: accepted[i].name,
+        file: p.file,
+        url: URL.createObjectURL(p.file),
+        transcript: "",
+        duration: p.duration,
+      }));
+      const totalSecs = prepared.reduce((s, p) => s + p.duration, 0);
+      setClips((prev) => {
+        const next = [...prev, ...newClips];
+        if (next.length > 5) return next.slice(0, 5);
+        return next;
+      });
+      toast(
+        `${newClips.length} clip(s) preparado(s): ${Math.round(totalSecs)} s en total (mono 16 kHz)`,
+        "success"
+      );
+    } catch (err) {
+      toast(
+        err instanceof Error ? `No se pudo procesar el audio: ${err.message}` : "No se pudo procesar el audio",
+        "error"
+      );
+    } finally {
+      setConverting(false);
+    }
+  }, [clips, toast]);
 
   useEffect(() => {
     const el = dragRef.current;
@@ -63,7 +101,7 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
       e.preventDefault();
       el.classList.remove("border-cyan-500/60", "bg-cyan-950/10");
       const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith("audio/") || /\.(wav|mp3|m4a|opus|ogg|flac)$/i.test(f.name));
-      addFiles(files);
+      void addFiles(files);
     };
     el.addEventListener("dragover", onOver);
     el.addEventListener("dragleave", onLeave);
@@ -73,8 +111,7 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
       el.removeEventListener("dragleave", onLeave);
       el.removeEventListener("drop", onDrop);
     };
-     
-  }, []);
+  }, [addFiles]);
 
   useEffect(() => {
     return () => {
@@ -96,9 +133,11 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
         stream.getTracks().forEach((t) => t.stop());
         const webm = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
         try {
-          const wav = await audioBlobToWav(webm);
-          addFiles([new File([wav], `grabacion-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.wav`, { type: "audio/wav" })]);
-          toast("Grabación añadida (convertida a WAV)", "success");
+          await addFiles([
+            new File([webm], `grabacion-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`, {
+              type: webm.type,
+            }),
+          ]);
         } catch {
           toast("No se pudo convertir la grabación", "error");
         }
@@ -194,26 +233,36 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
         <h2 className="text-sm font-semibold text-zinc-200">1 · Audios de referencia</h2>
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-          Sube entre 1 y 5 clips de 10 s – 2 min: voz limpia, un solo hablante, sin música ni eco.
-          Más audio (1–2 minutos en total) = mejor clon. Formatos: WAV, MP3, M4A, Opus.
+          Sube hasta 5 clips (WAV, MP3, M4A, Opus): voz limpia, un solo hablante, sin música ni
+          eco. Se convierten automáticamente a mono 16 kHz conservando hasta 60 s por clip y 2
+          minutos en total (límite de la plataforma). Más audio limpio = mejor clon.
         </p>
 
         <div
           ref={dragRef}
           className="mt-3 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-700 bg-zinc-950/40 px-4 py-8 text-center transition-colors"
         >
-          <span className="text-2xl">📂</span>
-          <p className="text-sm text-zinc-400">Arrastra aquí tus audios o</p>
-          <div className="flex gap-2">
-            <Btn onClick={() => fileRef.current?.click()}>Seleccionar archivos</Btn>
-            {recording ? (
-              <Btn variant="danger" onClick={stopRecording}>
-                ⏺ Detener ({recordSecs}s)
-              </Btn>
-            ) : (
-              <Btn onClick={startRecording}>🎙 Grabar del micro</Btn>
-            )}
-          </div>
+          {converting ? (
+            <>
+              <Spinner />
+              <p className="text-sm text-zinc-400">Convirtiendo a mono 16 kHz…</p>
+            </>
+          ) : (
+            <>
+              <span className="text-2xl">📂</span>
+              <p className="text-sm text-zinc-400">Arrastra aquí tus audios o</p>
+              <div className="flex gap-2">
+                <Btn onClick={() => fileRef.current?.click()}>Seleccionar archivos</Btn>
+                {recording ? (
+                  <Btn variant="danger" onClick={stopRecording}>
+                    ⏺ Detener ({recordSecs}s)
+                  </Btn>
+                ) : (
+                  <Btn onClick={startRecording}>🎙 Grabar del micro</Btn>
+                )}
+              </div>
+            </>
+          )}
           <input
             ref={fileRef}
             type="file"
@@ -221,7 +270,7 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
             multiple
             hidden
             onChange={(e) => {
-              addFiles(Array.from(e.target.files || []));
+              void addFiles(Array.from(e.target.files || []));
               e.target.value = "";
             }}
           />
@@ -234,8 +283,8 @@ export function CloneStudio({ keys, avail, onOpenSettings, onUseVoice, toast }: 
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-[10px] text-zinc-500">#{i + 1}</span>
                   <audio src={clip.url} controls className="h-8 flex-1" />
-                  <span className="w-20 text-right text-[11px] text-zinc-500">
-                    {formatBytes(clip.file.size)}
+                  <span className="w-28 text-right text-[11px] text-zinc-500" title="Duración conservada y peso tras conversión">
+                    {Math.floor(clip.duration / 60)}:{String(Math.round(clip.duration % 60)).padStart(2, "0")} · {formatBytes(clip.file.size)}
                   </span>
                   <button
                     onClick={() => setClips((prev) => prev.filter((c) => c.id !== clip.id))}

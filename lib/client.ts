@@ -223,6 +223,123 @@ export async function audioBlobToWav(blob: Blob): Promise<Blob> {
   }
 }
 
+// ---------- preparación de audio para subir (límite 4.5 MB de Vercel) ----------
+
+/** Mono 16 kHz PCM16 ≈ 32 KB/s: 60 s ≈ 1.9 MB */
+export const VOICE_CLIP_SAMPLE_RATE = 16000;
+const VOICE_CLIP_MAX_PER_CLIP = 60; // segundos conservados por clip
+const VOICE_CLIP_MAX_TOTAL = 120; // presupuesto total en segundos (≈3.8 MB)
+export const STT_CHUNK_SECONDS = 75; // ≈2.4 MB por trozo (3.2 MB en base64)
+
+function encodeMonoWav(channel: Float32Array, sampleRate: number): Blob {
+  const bytesPerSample = 2;
+  const dataSize = channel.length * bytesPerSample;
+  const out = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(out);
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, dataSize, true);
+  let offset = 44;
+  for (let i = 0; i < channel.length; i++) {
+    const sample = Math.max(-1, Math.min(1, channel[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([out], { type: "audio/wav" });
+}
+
+/** Decodifica cualquier audio y lo renderiza a mono 16 kHz. */
+async function toMono16k(file: Blob): Promise<Float32Array> {
+  const ctx = new AudioContext();
+  try {
+    const decoded = await ctx.decodeAudioData(await file.arrayBuffer());
+    const frames = Math.ceil(decoded.duration * VOICE_CLIP_SAMPLE_RATE);
+    const offline = new OfflineAudioContext(1, frames, VOICE_CLIP_SAMPLE_RATE);
+    const source = offline.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offline.destination);
+    source.start();
+    const rendered = await offline.startRendering();
+    return rendered.getChannelData(0).slice();
+  } finally {
+    void ctx.close();
+  }
+}
+
+export interface PreparedClip {
+  file: File;
+  duration: number; // segundos conservados
+}
+
+/**
+ * Prepara clips de referencia para clonar: convierte a WAV mono 16 kHz,
+ * recorta cada clip a 60 s y respeta un presupuesto de 2 minutos en total
+ * para no superar el límite de 4.5 MB de subida de Vercel.
+ */
+export async function prepareVoiceClips(
+  files: File[],
+  maxTotalSeconds = VOICE_CLIP_MAX_TOTAL
+): Promise<PreparedClip[]> {
+  const channels: Float32Array[] = [];
+  for (const file of files) channels.push(await toMono16k(file));
+
+  // presupuesto de duración por clip y por la selección completa
+  const durations = channels.map((c) => c.length / VOICE_CLIP_SAMPLE_RATE);
+  let keeps = durations.map((d) => Math.min(d, VOICE_CLIP_MAX_PER_CLIP));
+  const total = keeps.reduce((s, k) => s + k, 0);
+  if (total > maxTotalSeconds) {
+    const scale = Math.max(0, maxTotalSeconds) / total;
+    keeps = keeps.map((k) => k * scale);
+  }
+
+  return channels.map((channel, i) => {
+    const frames = Math.floor(keeps[i] * VOICE_CLIP_SAMPLE_RATE);
+    const trimmed = channel.subarray(0, Math.min(frames, channel.length));
+    const blob = encodeMonoWav(trimmed, VOICE_CLIP_SAMPLE_RATE);
+    const baseName = files[i].name.replace(/\.[^.]+$/, "");
+    return {
+      file: new File([blob], `${baseName}-mono16k.wav`, { type: "audio/wav" }),
+      duration: trimmed.length / VOICE_CLIP_SAMPLE_RATE,
+    };
+  });
+}
+
+export interface PreparedSttAudio {
+  chunks: Blob[];
+  totalDuration: number;
+}
+
+/**
+ * Prepara audio para transcribir: mono 16 kHz WAV troceado en fragmentos
+ * de ≤75 s (el JSON en base64 de cada uno queda por debajo del límite de Vercel).
+ */
+export async function prepareAudioForStt(file: File): Promise<PreparedSttAudio> {
+  const channel = await toMono16k(file);
+  const chunkFrames = STT_CHUNK_SECONDS * VOICE_CLIP_SAMPLE_RATE;
+  const chunks: Blob[] = [];
+  for (let start = 0; start < channel.length; start += chunkFrames) {
+    const slice = channel.subarray(start, Math.min(start + chunkFrames, channel.length));
+    chunks.push(encodeMonoWav(slice, VOICE_CLIP_SAMPLE_RATE));
+  }
+  if (chunks.length === 0) {
+    chunks.push(encodeMonoWav(new Float32Array(0), VOICE_CLIP_SAMPLE_RATE));
+  }
+  return { chunks, totalDuration: channel.length / VOICE_CLIP_SAMPLE_RATE };
+}
+
 // ---------- utilidades ----------
 
 export function blobToBase64(blob: Blob): Promise<string> {

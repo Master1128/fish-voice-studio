@@ -8,8 +8,9 @@ import {
   blobToBase64,
   downloadText,
   formatDuration,
-  guessMediaType,
+  prepareAudioForStt,
   segmentsToSrt,
+  STT_CHUNK_SECONDS,
 } from "@/lib/client";
 import { LANGUAGES } from "@/lib/constants";
 import { Badge, Btn, EmptyState, Field, Select, Spinner, Toggle } from "./ui";
@@ -30,6 +31,7 @@ export function SttStudio({ keys, avail, onOpenSettings, toast, lastAudio }: Pro
   const [language, setLanguage] = useState("");
   const [ignoreTimestamps, setIgnoreTimestamps] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [result, setResult] = useState<TranscribeResponse | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<HTMLDivElement>(null);
@@ -83,28 +85,55 @@ export function SttStudio({ keys, avail, onOpenSettings, toast, lastAudio }: Pro
     }
     setBusy(true);
     setResult(null);
+    setProgress({ done: 0, total: 1 });
     try {
-      const base64 = await blobToBase64(file);
-      const data = await apiFetch<TranscribeResponse>(
-        "/api/transcribe",
-        keys,
-        {
+      // convertir a mono 16 kHz y trocear para respetar el límite de 4.5 MB por petición
+      const prepared = await prepareAudioForStt(file);
+      const merged: TranscribeResponse = {
+        text: "",
+        segments: [],
+        language: undefined,
+        durationInSeconds: prepared.totalDuration,
+        warnings: [],
+      };
+      for (let i = 0; i < prepared.chunks.length; i++) {
+        setProgress({ done: i, total: prepared.chunks.length });
+        const base64 = await blobToBase64(prepared.chunks[i]);
+        const data = await apiFetch<TranscribeResponse>("/api/transcribe", keys, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             audio: base64,
-            mediaType: guessMediaType(file.name, file.type),
+            mediaType: "audio/wav",
             language: language || undefined,
             ignoreTimestamps,
           }),
+        });
+        // desplazar las marcas de tiempo al inicio real de este trozo
+        const chunkStart = i * STT_CHUNK_SECONDS;
+        merged.text += (merged.text && data.text ? " " : "") + (data.text ?? "");
+        for (const seg of data.segments ?? []) {
+          merged.segments.push({
+            text: seg.text,
+            start: seg.start != null ? seg.start + chunkStart : undefined,
+            end: seg.end != null ? seg.end + chunkStart : undefined,
+          });
         }
+        merged.language = merged.language || data.language;
+        merged.warnings = [...(merged.warnings ?? []), ...(data.warnings ?? [])];
+      }
+      setResult(merged);
+      toast(
+        prepared.chunks.length > 1
+          ? `Transcripción completada en ${prepared.chunks.length} partes`
+          : "Transcripción completada",
+        "success"
       );
-      setResult(data);
-      toast("Transcripción completada", "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Error transcribiendo", "error");
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -169,7 +198,12 @@ export function SttStudio({ keys, avail, onOpenSettings, toast, lastAudio }: Pro
 
         <div className="mt-4">
           <Btn variant="primary" size="lg" onClick={transcribeAudio} disabled={!file || busy}>
-            {busy ? <Spinner /> : "📝"} Transcribir
+            {busy ? <Spinner /> : "📝"}{" "}
+            {busy && progress && progress.total > 1
+              ? `Transcribiendo parte ${progress.done + 1}/${progress.total}…`
+              : busy
+                ? "Preparando audio…"
+                : "Transcribir"}
           </Btn>
         </div>
       </section>
