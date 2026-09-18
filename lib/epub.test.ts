@@ -340,6 +340,14 @@ describe("safeFileName", () => {
     expect(safeFileName("///")).toBe("sin-titulo");
     expect(safeFileName("Fin...")).toBe("Fin");
   });
+
+  it("tolera valores ausentes en vez de lanzar", () => {
+    // Una recarga en caliente puede dejar estado sin el campo esperado, y eso
+    // no debe tumbar una tanda de horas con un error de 'normalize'.
+    expect(safeFileName(undefined)).toBe("sin-titulo");
+    expect(safeFileName(null)).toBe("sin-titulo");
+    expect(safeFileName("")).toBe("sin-titulo");
+  });
 });
 
 describe("estimateSeconds / formatDuration", () => {

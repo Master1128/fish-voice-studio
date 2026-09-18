@@ -371,9 +371,16 @@ export function parseEpub(entries: Map<string, Uint8Array>): EpubBook {
   return { title, author, language, chapters, skipped };
 }
 
-/** Nombre de archivo seguro para cualquier sistema de archivos. */
-export function safeFileName(input: string, maxLength = 80): string {
-  const cleaned = input
+/**
+ * Nombre de archivo seguro para cualquier sistema de archivos.
+ *
+ * Tolera valores ausentes a propósito: se llama con metadatos de EPUB y con
+ * estado de la interfaz, y que una recarga en caliente o un EPUB sin título
+ * tumben una tanda de horas con un «cannot read properties of undefined» no
+ * es aceptable. Mejor un nombre soso que un fallo.
+ */
+export function safeFileName(input: string | null | undefined, maxLength = 80): string {
+  const cleaned = String(input ?? "")
     .normalize("NFC")
     .replace(/[\\/:*?"<>|]/g, " ")
     .replace(/[ -]/g, " ")

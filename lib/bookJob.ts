@@ -114,6 +114,7 @@ interface PickerWindow {
   }) => Promise<FileSystemDirectoryHandleLike>;
 }
 
+/** Dónde se escriben los capítulos de UN libro. */
 export interface OutputTarget {
   kind: "directory" | "download";
   label: string;
@@ -122,23 +123,28 @@ export interface OutputTarget {
   listExisting?: () => Promise<Set<string>>;
 }
 
+/**
+ * Carpeta raíz elegida UNA vez, que reparte una subcarpeta por libro. Es lo que
+ * permite dejar una cola de libros sola: el selector de carpeta exige un gesto
+ * del usuario, así que no se puede pedir una por libro a mitad de la tanda.
+ */
+export interface OutputRoot {
+  kind: "directory" | "download";
+  label: string;
+  forBook: (folderName: string) => Promise<OutputTarget>;
+}
+
 export function supportsDirectoryPicker(): boolean {
   return typeof window !== "undefined" && !!(window as unknown as PickerWindow).showDirectoryPicker;
 }
 
-/**
- * Pide una carpeta y crea dentro una subcarpeta con el nombre del libro.
- * Es el camino bueno: cada capítulo se escribe a disco en cuanto termina, así
- * que un libro de 9 horas no tiene que caber en memoria.
- */
-export async function pickDirectoryTarget(folderName: string): Promise<OutputTarget> {
-  const picker = (window as unknown as PickerWindow).showDirectoryPicker;
-  if (!picker) throw new Error("Este navegador no permite elegir carpeta");
-  const root = await picker({ mode: "readwrite", id: "fvs-audiolibros" });
-  const dir = await root.getDirectoryHandle(safeFileName(folderName), { create: true });
+function directoryTarget(
+  dir: FileSystemDirectoryHandleLike,
+  label: string
+): OutputTarget {
   return {
     kind: "directory",
-    label: `${root.name}/${safeFileName(folderName)}`,
+    label,
     write: async (fileName, blob) => {
       const handle = await dir.getFileHandle(fileName, { create: true });
       const writable = await handle.createWritable();
@@ -159,9 +165,28 @@ export async function pickDirectoryTarget(folderName: string): Promise<OutputTar
   };
 }
 
-/** Alternativa para navegadores sin File System Access: una descarga por capítulo. */
-export function downloadTarget(): OutputTarget {
+/**
+ * Pide la carpeta raíz. Cada capítulo se escribe a disco en cuanto termina,
+ * así que un libro de 9 horas no tiene que caber en memoria.
+ */
+export async function pickOutputRoot(): Promise<OutputRoot> {
+  const picker = (window as unknown as PickerWindow).showDirectoryPicker;
+  if (!picker) throw new Error("Este navegador no permite elegir carpeta");
+  const root = await picker({ mode: "readwrite", id: "fvs-audiolibros" });
   return {
+    kind: "directory",
+    label: root.name,
+    forBook: async (folderName) => {
+      const safe = safeFileName(folderName);
+      const dir = await root.getDirectoryHandle(safe, { create: true });
+      return directoryTarget(dir, `${root.name}/${safe}`);
+    },
+  };
+}
+
+/** Alternativa para navegadores sin File System Access: una descarga por capítulo. */
+export function downloadRoot(): OutputRoot {
+  const target: OutputTarget = {
     kind: "download",
     label: "Carpeta de descargas",
     write: async (fileName, blob) => {
@@ -177,6 +202,48 @@ export function downloadTarget(): OutputTarget {
       URL.revokeObjectURL(url);
     },
   };
+  return {
+    kind: "download",
+    label: target.label,
+    forBook: async () => target,
+  };
+}
+
+/** Nombre de la subcarpeta de un libro: «Autor - Título». */
+export function bookFolderName(book: { title: string; author: string }): string {
+  return book.author
+    ? safeFileName(`${safeFileName(book.author, 40)} - ${book.title}`)
+    : safeFileName(book.title);
+}
+
+/**
+ * Asigna una subcarpeta distinta a cada libro de la cola.
+ *
+ * Hace falta porque dos EPUB distintos pueden traer el mismo título y autor en
+ * sus metadatos —una traducción y su original, o dos versiones del mismo
+ * trabajo— y compartirían carpeta, sobreescribiéndose capítulo a capítulo sin
+ * avisar. Cuando eso pasa, se desempata con el nombre del archivo.
+ */
+export function assignBookFolders(
+  books: { book: { title: string; author: string }; fileName: string }[]
+): string[] {
+  const used = new Set<string>();
+  return books.map(({ book, fileName }) => {
+    const base = bookFolderName(book);
+    if (!used.has(base)) {
+      used.add(base);
+      return base;
+    }
+    const stem = safeFileName(fileName.replace(/\.epub$/i, ""), 60);
+    let candidate = `${base} (${stem})`;
+    let n = 2;
+    while (used.has(candidate)) {
+      candidate = `${base} (${n})`;
+      n += 1;
+    }
+    used.add(candidate);
+    return candidate;
+  });
 }
 
 // ---------- nombres de archivo ----------

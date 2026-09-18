@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { bookKeyFor, chapterFileName, mapWithConcurrency } from "./bookJob";
+import {
+  assignBookFolders,
+  bookFolderName,
+  bookKeyFor,
+  chapterFileName,
+  mapWithConcurrency,
+} from "./bookJob";
 import type { EpubBook } from "./epub";
 
 const book: EpubBook = {
@@ -24,6 +30,60 @@ describe("chapterFileName", () => {
 
   it("neutraliza los caracteres que romperían la ruta", () => {
     expect(chapterFileName(1, 2, 'Cap/ítulo: "uno"')).toBe("01 - Cap ítulo uno.mp3");
+  });
+});
+
+describe("bookFolderName", () => {
+  it("usa «Autor - Título» y cae al título solo si no hay autor", () => {
+    expect(bookFolderName({ title: "Manos que ayudan", author: "Janet Benge" })).toBe(
+      "Janet Benge - Manos que ayudan"
+    );
+    expect(bookFolderName({ title: "Sin autor", author: "" })).toBe("Sin autor");
+  });
+
+  it("neutraliza los caracteres que romperían la ruta", () => {
+    expect(bookFolderName({ title: "Tomo 1/2", author: "A: B" })).toBe("A B - Tomo 1 2");
+  });
+
+  it("dos libros distintos no comparten carpeta", () => {
+    const a = bookFolderName({ title: "Helping Hands", author: "Janet Benge" });
+    const b = bookFolderName({ title: "Joyful Surrender", author: "Janet Benge" });
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("assignBookFolders", () => {
+  const item = (title: string, author: string, fileName: string) => ({
+    book: { title, author },
+    fileName,
+  });
+
+  it("deja el nombre normal cuando no hay colisión", () => {
+    expect(
+      assignBookFolders([
+        item("Helping Hands", "Janet Benge", "a.epub"),
+        item("Joyful Surrender", "Janet Benge", "b.epub"),
+      ])
+    ).toEqual(["Janet Benge - Helping Hands", "Janet Benge - Joyful Surrender"]);
+  });
+
+  it("desempata con el nombre de archivo dos libros de igual título y autor", () => {
+    // Caso real: la traducción y el original traen los mismos metadatos, y sin
+    // esto escribirían los capítulos en la misma carpeta, sobreescribiéndose.
+    const out = assignBookFolders([
+      item("Helping Hands", "Janet Benge", "Manos que ayudan (ES).epub"),
+      item("Helping Hands", "Janet Benge", "Helping Hands (EN).epub"),
+    ]);
+    expect(out[0]).toBe("Janet Benge - Helping Hands");
+    expect(out[1]).toBe("Janet Benge - Helping Hands (Helping Hands (EN))");
+    expect(new Set(out).size).toBe(2);
+  });
+
+  it("nunca repite carpeta, ni con muchos archivos de igual nombre", () => {
+    const out = assignBookFolders(
+      Array.from({ length: 6 }, () => item("Mismo", "Autor", "igual.epub"))
+    );
+    expect(new Set(out).size).toBe(6);
   });
 });
 

@@ -56,7 +56,9 @@
 - **Historial de generaciones** con reproductor, velocidad de reproducción, descarga por segmento o unido, avisos del modelo y coste estimado ($0 durante la promo).
 
 ### 📚 Audiolibro (EPUB → MP3 por capítulo)
-- **Arrastra un `.epub`** y se convierte en un audiolibro: un MP3 por capítulo, numerado y con etiquetas ID3 (`TALB` el libro, `TRCK` el orden, `TPE2` el autor), listo para Smart AudioBook Player, Audiobookshelf o Apple Books.
+- **Arrastra uno o varios `.epub`**: con uno entras en modo interactivo (revisas capítulos antes de generar); con varios se monta una **cola** que los encadena sola, con una sola elección de carpeta y una subcarpeta por libro. Si un libro falla, se anota y se sigue con el siguiente.
+- Dos EPUB con el mismo título y autor en sus metadatos —una traducción y su original— **no comparten carpeta**: se desempatan con el nombre del archivo antes de escribir nada.
+- Cada libro se convierte en un audiolibro: un MP3 por capítulo, numerado y con etiquetas ID3 (`TALB` el libro, `TRCK` el orden, `TPE2` el autor), listo para Smart AudioBook Player, Audiobookshelf o Apple Books.
 - **Todo el EPUB se lee en el navegador** (ZIP + OPF + spine con `fflate`): no se sube a ningún servidor, así que el límite de ~4,5 MB por petición de Vercel no aplica.
 - **Detecta el cuerpo del libro y lo separa del paratexto**, cruzando tres señales: el índice del propio libro (NCX o nav de EPUB 3), el título de la sección y la forma del texto (un índice o una lista de la colección no tiene prosa). Los créditos, la portadilla, el índice y la bibliografía se listan marcados como *paratexto* y **desmarcados** — nunca se eliminan, porque un índice incompleto haría perder capítulos reales.
 - **Limpieza para audio**: quita notas al pie y sus marcadores `<sup>`, números de página, guiones de división y adornos tipográficos que el TTS leería en voz alta.
