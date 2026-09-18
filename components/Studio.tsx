@@ -9,12 +9,14 @@ import { TtsStudio } from "./TtsStudio";
 import { VoiceLibrary } from "./VoiceLibrary";
 import { CloneStudio } from "./CloneStudio";
 import { SttStudio } from "./SttStudio";
+import { BookStudio } from "./BookStudio";
 import { AccountPanel } from "./AccountPanel";
 
-type Tab = "studio" | "voices" | "clone" | "stt" | "account";
+type Tab = "studio" | "book" | "voices" | "clone" | "stt" | "account";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "studio", label: "Estudio TTS", icon: "🎧" },
+  { id: "book", label: "Audiolibro", icon: "📚" },
   { id: "voices", label: "Voces", icon: "🎭" },
   { id: "clone", label: "Clonar voz", icon: "🧬" },
   { id: "stt", label: "Transcribir", icon: "📝" },
@@ -98,9 +100,12 @@ export function Studio() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            {promoDays != null && (
-              <Badge tone="green">gratis · {promoDays} días restantes</Badge>
-            )}
+            {promoDays != null &&
+              (promoDays > 0 ? (
+                <Badge tone="green">gratis · {promoDays} días restantes</Badge>
+              ) : (
+                <Badge tone="amber">promo del Gateway finalizada</Badge>
+              ))}
             <Btn onClick={openSettings} size="sm">
               🔑 API Keys{" "}
               {!avail.gw && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-400" />}
@@ -126,7 +131,9 @@ export function Studio() {
           ))}
         </nav>
 
-        {!avail.gw && tab !== "account" && (
+        {/* En Audiolibro el motor por defecto es Fish directo: con su key, el
+            aviso del Gateway no aplica. */}
+        {!avail.gw && tab !== "account" && !(tab === "book" && avail.fish) && (
           <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-sm text-amber-300">
             <span>⚠ Configura tu API key de Vercel AI Gateway para empezar a generar audio gratis.</span>
             <Btn size="sm" onClick={openSettings}>
@@ -145,6 +152,9 @@ export function Studio() {
             injectVoice={injectVoice}
             setLastAudio={setLastAudio}
           />
+        )}
+        {tab === "book" && (
+          <BookStudio keys={keys} avail={avail} onOpenSettings={openSettings} toast={toast} />
         )}
         {tab === "voices" && (
           <VoiceLibrary keys={keys} avail={avail} onUseVoice={useVoice} toast={toast} />

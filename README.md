@@ -55,6 +55,17 @@
 - **Dos motores**: *Vercel Gateway* (gratis durante la promo) o *Fish directo* con tu propia key (necesario para voces privadas; usa `prosody_speed`/`prosody_volume` nativos).
 - **Historial de generaciones** con reproductor, velocidad de reproducción, descarga por segmento o unido, avisos del modelo y coste estimado ($0 durante la promo).
 
+### 📚 Audiolibro (EPUB → MP3 por capítulo)
+- **Arrastra un `.epub`** y se convierte en un audiolibro: un MP3 por capítulo, numerado y con etiquetas ID3 (`TALB` el libro, `TRCK` el orden, `TPE2` el autor), listo para Smart AudioBook Player, Audiobookshelf o Apple Books.
+- **Todo el EPUB se lee en el navegador** (ZIP + OPF + spine con `fflate`): no se sube a ningún servidor, así que el límite de ~4,5 MB por petición de Vercel no aplica.
+- **Detecta el cuerpo del libro y lo separa del paratexto**, cruzando tres señales: el índice del propio libro (NCX o nav de EPUB 3), el título de la sección y la forma del texto (un índice o una lista de la colección no tiene prosa). Los créditos, la portadilla, el índice y la bibliografía se listan marcados como *paratexto* y **desmarcados** — nunca se eliminan, porque un índice incompleto haría perder capítulos reales.
+- **Limpieza para audio**: quita notas al pie y sus marcadores `<sup>`, números de página, guiones de división y adornos tipográficos que el TTS leería en voz alta.
+- **Se escribe a disco capítulo a capítulo** (File System Access API; si el navegador no la soporta, una descarga por capítulo). Un libro de 9 horas no tiene que caber en memoria.
+- **Reanudable**: si se corta la red, caduca la key o cierras la pestaña, lo generado se conserva y el botón pasa a *Continuar*. El progreso se detecta de los archivos que ya hay en la carpeta, no solo del `localStorage`.
+- **Fragmentos en paralelo** (1-6, por defecto 3): baja un libro medio de ~45 a ~15 minutos. El audio se ensambla siempre por índice, nunca por orden de finalización, así que paralelizar no descoloca el capítulo.
+- **Pensado para tiradas largas**: cada fragmento se reintenta hasta 4 veces con espera creciente; los errores que no se arreglan reintentando (key inválida, 401/403) abortan de inmediato en vez de quemar reintentos. Un libro medio son ~680 peticiones.
+- Aplica el **diccionario de pronunciación** y las **citas bíblicas** del Estudio TTS a todo el libro.
+
 ### 🎭 Voces
 - Navegación completa de la librería pública (hasta 1000 resultados por búsqueda según la API).
 - **Favoritos persistentes** (localStorage) y sección *Mis voces*: clonadas de tu cuenta de Fish Audio + ids pegados a mano.
@@ -173,10 +184,13 @@ app/
   api/voice/[id]/     GET   → estado de una voz (polling del entrenamiento)
   api/credits/        GET   → ai-gateway.vercel.sh/v1/credits
   page.tsx / layout.tsx
-components/           UI de cliente (Studio, TtsStudio, VoiceLibrary, CloneStudio,
-                      SttStudio, AccountPanel, VoicePicker, VoiceCard, ui)
+components/           UI de cliente (Studio, TtsStudio, BookStudio, VoiceLibrary,
+                      CloneStudio, SttStudio, AccountPanel, VoicePicker, VoiceCard, ui)
 lib/                  types.ts · constants.ts · client.ts (merge de audio, WAV,
                       SRT, división de texto) · server.ts (keys por header/env)
+                      epubText.ts (XHTML → texto sin DOM) · epub.ts (OPF/spine/NCX,
+                      paratexto) · bookJob.ts (descompresión, destino, reanudación,
+                      reintentos) · id3.ts (etiquetas ID3v2.3)
 public/screenshots/   capturas del README
 ```
 
