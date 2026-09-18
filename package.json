@@ -12,6 +12,7 @@
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.64",
     "ai": "^7.0.79",
+    "fflate": "^0.8.3",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8"
